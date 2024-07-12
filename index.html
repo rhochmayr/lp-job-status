@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Lilypad Job Status</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #121212; /* Dark background */
+            color: #a7ffef; /* lilypad green */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            color: #ffffff;
+            margin-top: 20px;
+        }
+
+        .filter-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .filter-container label {
+            color: #ffffff;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .filter-container select {
+            margin-right: 10px;
+            padding: 5px;
+            background-color: #000000;
+            color: #a7ffef;
+            border: 1px solid #a7ffef;
+        }
+
+        table {
+            width: 90%;
+            margin-top: 20px;
+            border-collapse: collapse;
+            box-shadow: 0 0 20px #a7ffef;
+            border-radius: 10px;
+            overflow: hidden;
+            max-height: 75vh;
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+            background-color: #000000;
+            border-radius: 5px;
+            box-shadow: 0 0 10px #a7ffef;
+            line-height: 1.6;
+        }
+
+        .online {
+            color: #a7ffef;
+        }
+
+        .offline {
+            color: #ff3d00;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Lilypad Job Status</h1>
+    <div id="refreshStatus" style="position: fixed; top: 10px; right: 10px; color: white;">
+        <div id="spinner" style="display: none;">
+            <i class="fas fa-spinner fa-spin"></i> Refreshing...
+        </div>
+        <div id="countdown"></div>
+    </div>
+    <div class="filter-container">
+        <label for="filter-id">Job ID:</label>
+        <select id="filter-id" onchange="applyAllFilters()"></select>
+
+        <label for="filter-jobcreator">Job Creator:</label>
+        <select id="filter-jobcreator" onchange="applyAllFilters()"></select>
+
+        <label for="filter-dealid">Deal ID:</label>
+        <select id="filter-dealid" onchange="applyAllFilters()"></select>
+
+        <label for="filter-state">State:</label>
+        <select id="filter-state" onchange="applyAllFilters()"></select>
+
+        <label for="filter-module">Module:</label>
+        <select id="filter-module" onchange="applyAllFilters()"></select>
+
+        <label for="filter-event">Event:</label>
+        <select id="filter-event" onchange="applyAllFilters()"></select>
+
+        <label for="filter-updated">Updated At:</label>
+        <select id="filter-updated" onchange="applyAllFilters()"></select>
+    </div>
+    <table id="uptime-status">
+        <thead>
+            <tr>
+                <th>Job ID</th>
+                <th>Job Creator</th>
+                <th>Deal ID</th>
+                <th>State</th>
+                <th>Module</th>
+                <th>Event</th>
+                <th>Updated At</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <script>
+        let countdownTimer;
+        let refreshInterval = 30000; // 30 seconds
+
+        async function fetchUptimeData() {
+            showSpinner(true);
+            const tableBody = document.querySelector('#uptime-status tbody');
+            console.log("Fetching data...");
+            try {
+                const response = await fetch('https://api-testnet.lilypad.tech/metrics-dashboard/jobs');
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
+                }
+                const jobs = await response.json();
+                console.log("Data parsed:", jobs);
+
+                if (!jobs.length) {
+                    throw new Error("No job data returned or incorrect format.");
+                }
+
+                tableBody.innerHTML = '';
+                jobs.forEach(job => {
+                    const row = createJobRow(job);
+                    tableBody.appendChild(row);
+                });
+
+                populateInitialDropdowns();  // Call after data is fetched and table is populated
+                applyAllFilters();  // Reapply filters to the new data
+
+            } catch (error) {
+                console.error('Fetch error:', error);
+                tableBody.innerHTML = `<tr><td colspan="7">Error loading data: ${error.message}. Please try again later.</td></tr>`;
+            } finally {
+                showSpinner(false);
+                startCountdown(refreshInterval); // Restart the countdown after fetching is complete
+            }
+        }
+
+        function startCountdown(duration) {
+            clearInterval(countdownTimer);  // Ensure no previous timer is running
+            let timer = duration / 1000; // Convert to seconds
+
+            updateCountdownDisplay(timer);  // Update immediately before starting interval
+
+            countdownTimer = setInterval(() => {
+                if (--timer < 0) {
+                    clearInterval(countdownTimer);
+                    document.getElementById('countdown').textContent = "Refreshing...";
+                    fetchUptimeData();  // Fetch data when countdown ends
+                } else {
+                    updateCountdownDisplay(timer);
+                }
+            }, 1000);
+        }
+
+        function updateCountdownDisplay(seconds) {
+            const minutes = parseInt(seconds / 60, 10);
+            const remainingSeconds = parseInt(seconds % 60, 10);
+            document.getElementById('countdown').textContent = `${pad(minutes)}:${pad(remainingSeconds)}`;
+        }
+
+        function pad(number) {
+            return number < 10 ? '0' + number : number;
+        }
+
+        function showSpinner(show) {
+            document.getElementById('spinner').style.display = show ? "block" : "none";
+            document.getElementById('countdown').style.display = show ? "none" : "block";
+        }
+
+        function createJobRow(job) {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td data-key="id">${job.ID}</td>
+                <td data-key="jobcreator">${job.JobCreator}</td>
+                <td data-key="dealid">${job.DealID}</td>
+                <td data-key="state">${job.State}</td>
+                <td data-key="module">${job.Module}</td>
+                <td data-key="event">${job.Event}</td>
+                <td data-key="updated">${new Date(job.UpdatedAt).toLocaleString()}</td>
+            `;
+            return row;
+        }
+        
+        function populateDropdown(filterId, rows, key) {
+            const dropdown = document.getElementById(filterId);
+            const values = new Set(['All']);  // Start with 'All' as a default option
+
+            rows.forEach(row => {
+                const cell = row.querySelector(`td[data-key='${key}']`);
+                if (cell) {
+                    values.add(cell.textContent.trim());
+                }
+            });
+
+            const currentFilter = dropdown.value;
+            dropdown.innerHTML = '';  // Clear existing options
+            values.forEach(value => {
+                const option = document.createElement('option');
+                option.value = option.textContent = value;
+
+                // Set 'Online' as selected only on the first load for 'Status' dropdown
+                if (filterId === 'filter-status' && value === 'Online' && !dropdown.initiated) {
+                    option.selected = true;
+                } else {
+                    option.selected = value === currentFilter;
+                }
+                dropdown.appendChild(option);
+            });
+
+            // Mark the dropdown as initiated to avoid resetting the filter on subsequent data loads
+            if (filterId === 'filter-status') {
+                dropdown.initiated = true;
+            }
+        }
+
+
+        // Make sure the initial population is done correctly
+        function populateInitialDropdowns() {
+            const allRows = document.querySelectorAll('#uptime-status tbody tr');
+            ['id', 'jobcreator', 'dealid', 'state', 'module', 'event', 'updated'].forEach(key => {
+                populateDropdown(`filter-${key}`, allRows, key);
+            });
+        }
+
+        function applyAllFilters() {
+            console.log("Applying filters...");
+            const filters = {
+                id: document.getElementById('filter-id').value.toLowerCase(),
+                jobcreator: document.getElementById('filter-jobcreator').value.toLowerCase(),
+                dealid: document.getElementById('filter-dealid').value.toLowerCase(),
+                state: document.getElementById('filter-state').value.toLowerCase(),
+                module: document.getElementById('filter-module').value.toLowerCase(),
+                event: document.getElementById('filter-event').value.toLowerCase(),
+                updated: document.getElementById('filter-updated').value.toLowerCase(),
+            };
+
+            const rows = document.querySelectorAll('#uptime-status tbody tr');
+            rows.forEach(row => {
+                let visible = true;
+                Object.keys(filters).forEach(key => {
+                    const columnValue = row.querySelector(`td[data-key='${key}']`).textContent.toLowerCase();
+                    if (filters[key] !== 'all' && !columnValue.includes(filters[key])) {
+                        visible = false;
+                    }
+                });
+                row.style.display = visible ? '' : 'none';
+            });
+            updateDropdownsBasedOnVisibility();
+        }
+
+        function updateDropdownsBasedOnVisibility() {
+            const visibleRows = document.querySelectorAll('#uptime-status tbody tr:not([style*="display: none"])');
+            ['id', 'jobcreator', 'dealid', 'state', 'module', 'event', 'updated'].forEach(key => {
+                populateDropdown(`filter-${key}`, visibleRows, key);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('select').forEach(select => {
+                select.addEventListener('change', applyAllFilters);
+            });
+
+            fetchUptimeData();
+        });
+
+        setInterval(fetchUptimeData, refreshInterval);
+    </script>
+</body>
+
+</html>
